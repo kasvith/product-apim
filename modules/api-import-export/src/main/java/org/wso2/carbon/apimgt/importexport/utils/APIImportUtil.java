@@ -67,7 +67,6 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import java.io.BufferedInputStream;
-import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -75,7 +74,6 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -277,6 +275,26 @@ public final class APIImportUtil {
     }
 
     /**
+     * Load swagger file from the disk. It supports both JSON and YAML formats
+     *
+     * @param pathToArchive API archive path
+     * @return Swagger content as a JSON string
+     * @throws IOException
+     */
+    private static String loadSwaggerFromDisk(String pathToArchive) throws IOException {
+        if (checkFileExistence(pathToArchive + APIImportExportConstants.YAML_SWAGGER_DEFINITION_LOCATION)) {
+            String yamlContent = FileUtils.readFileToString(
+                    new File(pathToArchive + APIImportExportConstants.YAML_SWAGGER_DEFINITION_LOCATION));
+            return YAMLUtils.YamlToJson(yamlContent);
+        } else if (checkFileExistence(pathToArchive + APIImportExportConstants.SWAGGER_DEFINITION_LOCATION)) {
+            return FileUtils.readFileToString(
+                    new File(pathToArchive + APIImportExportConstants.SWAGGER_DEFINITION_LOCATION));
+        }
+
+        throw new IOException("Missing swagger file. Either swagger.json or swagger.yaml should present");
+    }
+
+    /**
      * This method imports an API
      *
      * @param pathToArchive            location of the extracted folder of the API
@@ -294,10 +312,11 @@ public final class APIImportUtil {
         String targetStatus;
         String lifecycleAction = null;
         APIDefinition definitionFromOpenAPISpec = new APIDefinitionFromOpenAPISpec();
-        String pathToJSONFile = pathToArchive + APIImportExportConstants.JSON_FILE_LOCATION;
+        String pathToYamlFile = pathToArchive + APIImportExportConstants.YAML_API_FILE_LOCATION;
 
         try {
-            String jsonContent = FileUtils.readFileToString(new File(pathToJSONFile));
+            String yamlContent = FileUtils.readFileToString(new File(pathToYamlFile));
+            String jsonContent = YAMLUtils.YamlToJson(yamlContent);
             JsonElement configElement = new JsonParser().parse(jsonContent);
             JsonObject configObject = configElement.getAsJsonObject();
 
@@ -415,8 +434,7 @@ public final class APIImportUtil {
 
             //Swagger definition will only be available of API type HTTP. Web socket api does not have it.
             if (!APIConstants.APIType.WS.toString().equalsIgnoreCase(importedApi.getType())) {
-                String swaggerContent = FileUtils.readFileToString(
-                        new File(pathToArchive + APIImportExportConstants.SWAGGER_DEFINITION_LOCATION));
+                String swaggerContent = loadSwaggerFromDisk(pathToArchive);
                 addSwaggerDefinition(importedApi.getId(), swaggerContent);
 
                 //Load required properties from swagger to the API
@@ -490,10 +508,11 @@ public final class APIImportUtil {
         String currentTenantDomain;
         String lifecycleAction = null;
         APIDefinition definitionFromOpenAPISpec = new APIDefinitionFromOpenAPISpec();
-        String pathToJSONFile = pathToArchive + APIImportExportConstants.JSON_FILE_LOCATION;
+        String pathToYamlFile = pathToArchive + APIImportExportConstants.YAML_API_FILE_LOCATION;
 
         try {
-            String jsonContent = FileUtils.readFileToString(new File(pathToJSONFile));
+            String yamlContent = FileUtils.readFileToString(new File(pathToYamlFile));
+            String jsonContent = YAMLUtils.YamlToJson(yamlContent);
             JsonElement configElement = new JsonParser().parse(jsonContent);
             JsonObject configObject = configElement.getAsJsonObject();
 
@@ -581,8 +600,7 @@ public final class APIImportUtil {
         try {
             //Swagger definition will only be available of API type HTTP. Web socket api does not have it.
             if (!APIConstants.APIType.WS.toString().equalsIgnoreCase(importedApi.getType())) {
-                String swaggerContent = FileUtils.readFileToString(
-                        new File(pathToArchive + APIImportExportConstants.SWAGGER_DEFINITION_LOCATION));
+                String swaggerContent = loadSwaggerFromDisk(pathToArchive);
                 addSwaggerDefinition(importedApi.getId(), swaggerContent);
 
                 //Load required properties from swagger to the API
@@ -718,17 +736,15 @@ public final class APIImportUtil {
      */
     private static void addAPIDocuments(String pathToArchive, API importedApi) {
 
-        String docFileLocation = pathToArchive + APIImportExportConstants.DOCUMENT_FILE_LOCATION;
+        String docFileLocation = pathToArchive + APIImportExportConstants.YAML_DOCUMENT_FILE_LOCATION;
         FileInputStream inputStream = null;
-        BufferedReader bufferedReader = null;
         APIIdentifier apiIdentifier = importedApi.getId();
 
         try {
             if (checkFileExistence(docFileLocation)) {
-
-                inputStream = new FileInputStream(docFileLocation);
-                bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
-                Documentation[] documentations = new Gson().fromJson(bufferedReader, Documentation[].class);
+                String yamlContent = FileUtils.readFileToString(new File(docFileLocation));
+                String jsonContent = YAMLUtils.YamlToJson(yamlContent);
+                Documentation[] documentations = new Gson().fromJson(jsonContent, Documentation[].class);
 
                 //For each type of document separate action is performed
                 for (Documentation doc : documentations) {
@@ -789,7 +805,6 @@ public final class APIImportUtil {
             log.error("Failed to add Documentations to API.", e);
         } finally {
             IOUtils.closeQuietly(inputStream);
-            IOUtils.closeQuietly(bufferedReader);
         }
 
     }

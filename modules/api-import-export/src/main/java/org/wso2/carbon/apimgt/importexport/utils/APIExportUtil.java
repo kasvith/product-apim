@@ -18,37 +18,35 @@
 
 package org.wso2.carbon.apimgt.importexport.utils;
 
-import com.google.gson.reflect.TypeToken;
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
-import org.json.JSONTokener;
-import org.wso2.carbon.apimgt.api.dto.CertificateMetadataDTO;
-import org.wso2.carbon.apimgt.impl.definitions.APIDefinitionFromOpenAPISpec;
-import org.wso2.carbon.apimgt.impl.dto.UserRegistrationConfigDTO;
-import org.wso2.carbon.apimgt.impl.internal.ServiceReferenceHolder;
-import org.wso2.carbon.apimgt.impl.utils.SelfSignUpUtil;
-import org.wso2.carbon.apimgt.importexport.APIExportException;
-
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.reflect.TypeToken;
 import org.apache.axiom.om.OMElement;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+import org.json.JSONTokener;
 import org.wso2.carbon.apimgt.api.APIDefinition;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.api.APIProvider;
+import org.wso2.carbon.apimgt.api.dto.CertificateMetadataDTO;
 import org.wso2.carbon.apimgt.api.model.API;
 import org.wso2.carbon.apimgt.api.model.APIIdentifier;
 import org.wso2.carbon.apimgt.api.model.Documentation;
 import org.wso2.carbon.apimgt.api.model.Scope;
 import org.wso2.carbon.apimgt.impl.APIConstants;
 import org.wso2.carbon.apimgt.impl.APIManagerFactory;
+import org.wso2.carbon.apimgt.impl.definitions.APIDefinitionFromOpenAPISpec;
+import org.wso2.carbon.apimgt.impl.dto.UserRegistrationConfigDTO;
+import org.wso2.carbon.apimgt.impl.internal.ServiceReferenceHolder;
 import org.wso2.carbon.apimgt.impl.utils.APIUtil;
+import org.wso2.carbon.apimgt.impl.utils.SelfSignUpUtil;
+import org.wso2.carbon.apimgt.importexport.APIExportException;
 import org.wso2.carbon.apimgt.importexport.APIImportExportConstants;
 import org.wso2.carbon.apimgt.importexport.CertificateDetail;
 import org.wso2.carbon.context.CarbonContext;
@@ -73,17 +71,15 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.xml.namespace.QName;
 import javax.xml.stream.XMLStreamException;
-
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
-import java.io.InputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.StringReader;
-
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.AbstractMap;
@@ -391,7 +387,8 @@ public class APIExportUtil {
             }
 
             String json = gson.toJson(docList);
-            writeFile(archivePath + APIImportExportConstants.DOCUMENT_FILE_LOCATION, json);
+            String yaml = YAMLUtils.JsonToYaml(json);
+            writeFile(archivePath + APIImportExportConstants.YAML_DOCUMENT_FILE_LOCATION, yaml);
 
             if (log.isDebugEnabled()) {
                 log.debug("API Documentation retrieved successfully");
@@ -770,11 +767,12 @@ public class APIExportUtil {
         //Remove unnecessary data from exported Api
         cleanApiDataToExport(apiToReturn);
 
-        Gson gson = new GsonBuilder().setPrettyPrinting().create();
-        String apiInJson = gson.toJson(apiToReturn);
-        writeFile(archivePath + File.separator + "Meta-information" + File.separator + "api.json", apiInJson);
-
         try {
+            Gson gson = new GsonBuilder().setPrettyPrinting().create();
+            String apiInJson = gson.toJson(apiToReturn);
+            String apiInYaml = YAMLUtils.JsonToYaml(apiInJson);
+            writeFile(archivePath + APIImportExportConstants.YAML_API_FILE_LOCATION, apiInYaml);
+
             //If a web socket API is exported, it does not contain a swagger file.
             //Therefore swagger export is only required for REST or SOAP based APIs
             if (!APIConstants.APIType.WS.toString().equalsIgnoreCase(apiToReturn.getType())) {
@@ -782,8 +780,9 @@ public class APIExportUtil {
                 JsonParser parser = new JsonParser();
                 JsonObject json = parser.parse(swaggerDefinition).getAsJsonObject();
                 String formattedSwaggerJson = gson.toJson(json);
-                writeFile(archivePath + File.separator + "Meta-information" + File.separator + "swagger.json",
-                          formattedSwaggerJson);
+                String swaggerInYaml = YAMLUtils.JsonToYaml(formattedSwaggerJson);
+                writeFile(archivePath + APIImportExportConstants.YAML_SWAGGER_DEFINITION_LOCATION,
+                        swaggerInYaml);
 
                 if (log.isDebugEnabled()) {
                     log.debug("Meta information retrieved successfully");
@@ -791,6 +790,10 @@ public class APIExportUtil {
             }
         } catch (APIManagementException e) {
             String errorMessage = "Error while retrieving Swagger definition";
+            log.error(errorMessage, e);
+            throw new APIExportException(errorMessage, e);
+        } catch (IOException e) {
+            String errorMessage = "Error while exporting YAML";
             log.error(errorMessage, e);
             throw new APIExportException(errorMessage, e);
         }
@@ -944,13 +947,18 @@ public class APIExportUtil {
                 String element = gson.toJson(endpointCertificatesDetails,
                         new TypeToken<ArrayList<CertificateDetail>>() {
                         }.getType());
+                String yaml = YAMLUtils.JsonToYaml(element);
                 writeFile(archivePath + File.separator + APIImportExportConstants.META_INFO_DIRECTORY +
-                                File.separator + APIImportExportConstants.ENDPOINTS_CERTIFICATE_FILE,
-                        element);
+                                File.separator + APIImportExportConstants.YAML_ENDPOINTS_CERTIFICATE_FILE,
+                        yaml);
             }
         } catch (JSONException e) {
             String errorMsg = "Error in converting Endpoint config to JSON object in API [" + api.getId().getApiName() + "]" ;
             throw new APIExportException(errorMsg, e);
+        } catch (IOException e) {
+            String errorMessage = "Error while retrieving saving as YAML";
+            log.error(errorMessage, e);
+            throw new APIExportException(errorMessage, e);
         }
     }
 
